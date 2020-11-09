@@ -1,0 +1,53 @@
+---
+- name: Create Cloud-Sync relationship
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  vars:
+
+# Production
+   client_id: Mu0V1ywgYteI6w1MbD15fKfVIUrNXGWC
+   auth0_domain: netapp-cloud-account.auth0.com
+   api_url: cloudsync.netapp.com/api
+# user defined variables
+   ref_token: # FILL IN YOUR INFO HERE
+   account_id: # FILL IN YOUR INFO HERE
+   broker_id: # FILL IN YOUR INFO HERE
+
+  tasks:
+    - name: Get API Token
+      uri:
+        url: https://{{auth0_domain}}/oauth/token
+        method: POST
+        headers:
+          Accept: application/json
+        body_format: json
+        return_content: yes
+        body: {"grant_type":"refresh_token", "client_id": "{{client_id}}", "refresh_token": "{{ref_token}}"}
+        status_code: 200,204,202
+      register: token_response
+      ignore_errors: no
+    - name: set API token & token_type
+      set_fact: tokenAPI="{{ (token_response.content|from_json).access_token }}"
+    - set_fact: token_typeAPI="{{ (token_response.content|from_json).token_type }}"
+    - name: Create template file for sync relationship
+      template: src=../templates/sync_relation.j2 dest=../templates/sync_relation.json
+    - name: Create relationship
+      uri:
+        url: https://{{api_url}}/relationships-v2
+        method: POST
+        headers:
+          Authorization: "{{token_typeAPI}} {{tokenAPI}}"
+          Accept: application/json
+          x-account-id: "{{account_id}}"
+        body_format: json
+        return_content: yes
+        body: "{{ lookup('file','../templates/sync_relation.json') }}"
+        status_code: 200,204,202
+        timeout: 180
+      register: relation_create_response
+      ignore_errors: no
+    - name: set relatoionshipID fact
+      set_fact: relationID="{{ (relation_create_response.content|from_json).relationshipId }}"
+    - name: Print relationship id
+      debug: msg={{relationID}}
